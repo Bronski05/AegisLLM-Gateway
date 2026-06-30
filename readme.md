@@ -33,10 +33,31 @@ GitOps Alerting & Fallbacks: Prometheus metrics track all traffic statuses (200/
 Clean Discord Alerts: Alert routing and layout are managed as code in Helm values. When a threshold is breached (e.g., >3 attacks/min), Grafana sends a well-formatted message to Discord with the incident details and a link to the dashboard.
 
 
+## Infrastructure as Code (IaC)
+
+The entire local cluster is provisioned automatically via **Terraform**. All configuration files are located in the `terraform/` directory:
+
+* **`providers.tf`** – Configures the required Terraform version (`>= 1.0`) and binds the `tehcyx/kind` provider.
+* **`main.tf`** – Deploys a multi-node Kubernetes cluster named `aegis-production-cluster` split into two nodes:
+  * **Control-Plane** – Manages the cluster and maps edge ports `80` and `443` directly to your localhost (`127.0.0.1`) for easy application access.
+  * **Worker** – A dedicated node where the application pods and database workloads actually run.
+* **Outputs** – Automatically exports the generated `kubeconfig` path straight to your home directory (`~/.kube/config`).
+
+
+##  Helm Chart Architecture (`aegisllm-chart/`)
+
+ Entire infrastructure and monitoring stack is built from scratch using native Kubernetes manifests inside the `templates/` folder:
+
+* **`gateway.yaml`** – Deployment and service configuration for the core FastAPI proxy application (AegisLLM).
+* **`redis.yaml` & `qdrant.yaml`** – In-cluster database deployments handling semantic vector storage and fast cache lookups.
+* **`prometheus.yaml` & `grafana.yaml`** – Built-in observability stack. All Prometheus datasources and Discord alerting rules are defined directly as code.
+* **`traffic-generator.yaml`** – A background background task that automatically generates dummy traffic and simulates Prompt Injection attacks to test alerts live.
+
 ## Quick Start
 
-Prerequisites
-Kubernetes Cluster (Kind or Minikube),
+Prerequisites:
+Docker Desktop,
+Terraform (>= 1.0),
 Helm v3,
 PowerShell (to run the automation script)
 
@@ -50,21 +71,30 @@ GEMINI_API_KEY=your_actual_gemini_api_key_here
 
 Deploy the entire microservice architecture using the automated management script:
 
-```Bash
+### Step 1: Initialize and apply Terraform infrastructure blueprint
+
+```bash
+cd terraform/
+terraform init
+terraform apply -auto-approve
+cd ..
+```
+
+### Step 2: Spin up the Kubernetes workloads via Helm using PowerShell script
+```bash
 .\run.ps1 up
 ```
 
-Expose the gateway and monitoring endpoints to your localhost:
-
-```Bash
+### Step 3: Expose the gateway and monitoring endpoints to localhost
+```bash
 .\run.ps1 proxy
 ```
 
 Accessing Dashboards
 
-Grafana: http://localhost:3000 (Path: /d/aegisllm-operational-dashboard)
-Prometheus (Metrics Gateway): http://localhost:9090
-Alertmanager (Alert Core): http://localhost:9093
+* **Grafana:** http://localhost:3000 (Dashboard path: `/d/aegisllm-operational-dashboard`)
+* **Prometheus:** Run on port `9090`
+* **Alertmanager:** Run on port `9093`
 
 ### 📸 Live Telemetry & System Proof
 
