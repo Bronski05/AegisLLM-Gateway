@@ -4,10 +4,9 @@ import json
 from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, Response, status, BackgroundTasks
-from fastapi.responses import StreamingResponse
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 from qdrant_client import AsyncQdrantClient
-from redis.asyncio import Redis, from_url
+from redis.asyncio import from_url
 
 from config import settings
 from cache import SemanticCache
@@ -72,7 +71,7 @@ async def track_telemetry(request: Request, call_next):
         response = await call_next(request)
         HTTP_REQUESTS_TOTAL.labels(method=method, endpoint=request.url.path, http_status=str(response.status_code)).inc()
         return response
-    except Exception as e:
+    except Exception:
         HTTP_REQUESTS_TOTAL.labels(method=method, endpoint=request.url.path, http_status="500").inc()
         raise
     finally:

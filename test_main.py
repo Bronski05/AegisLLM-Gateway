@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 import json
 from httpx import AsyncClient, ASGITransport
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from prometheus_client import REGISTRY
 
 # Import aplikacji z modułu gateway
