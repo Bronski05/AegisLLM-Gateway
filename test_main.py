@@ -144,7 +144,7 @@ async def test_internal_error_increments_500_counter(async_client):
     app.state.security_detector.inspect_prompt.return_value = False
     app.state.cache.lookup.side_effect = Exception("Redis connection refused")
     
-    # SRE FIX: Poprawny import licznika z pliku głównego bramki
+    # Poprawny import licznika z pliku głównego bramki
     from gateway.main import HTTP_REQUESTS_TOTAL
     
     try:
@@ -153,7 +153,10 @@ async def test_internal_error_increments_500_counter(async_client):
         before_value = 0
 
     payload = {"messages": [{"role": "user", "content": "Hello Aegis"}]}
-    await async_client.post("/v1/chat/completions", json=payload)
+    
+    # Przechwytujemy wyjątek, aby test nie umierał i przeszedł do walidacji metryk
+    with pytest.raises(Exception, match="Redis connection refused"):
+        await async_client.post("/v1/chat/completions", json=payload)
     
     # Weryfikacja: licznik dla statusu 500 musi wzrosnąć o 1, wyzwalając przyszły alert
     after_value = HTTP_REQUESTS_TOTAL.labels(method="POST", endpoint="/v1/chat/completions", http_status="500")._value.get()
