@@ -33,7 +33,7 @@ jobs:
         run: ruff check .
 
       - name: Helm Lint (GitOps Validation)
-        # SRE FIX: Automatyczna walidacja składni values.yaml i szablonów K8s
+        #  Automatyczna walidacja składni values.yaml i szablonów K8s
         run: helm lint aegisllm-chart/
 
       - name: Run Pytest (Unit & Integration Tests)
@@ -67,7 +67,7 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/aegis-gateway:latest
-            ghcr.io/${{ github.repository }}/aegis-gateway:${{ github.sha }}
+            ghcr.io/bronski05/aegisllm-gateway/aegis-gateway:latest
+            ghcr.io/bronski05/aegisllm-gateway/aegis-gateway:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
