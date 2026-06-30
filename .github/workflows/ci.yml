@@ -27,8 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # SRE FIX: Dodano prometheus_client, aby testy telemetryczne nie rzucały ImportError
-          pip install ruff pytest pytest-asyncio httpx fastapi prometheus_client
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Lint with Ruff (Static Analysis)
         run: ruff check .
