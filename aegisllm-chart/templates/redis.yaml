@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegis-redis
+  labels:
+    app: aegis-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aegis-redis
+  template:
+    metadata:
+      labels:
+        app: aegis-redis
+    spec:
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image }}"
+          ports:
+            - containerPort: {{ .Values.redis.port }}
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aegis-redis-service
+spec:
+  selector:
+    app: aegis-redis
+  ports:
+    - protocol: TCP
+      port: {{ .Values.redis.port }}
+      targetPort: {{ .Values.redis.port }}

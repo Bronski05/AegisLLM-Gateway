@@ -1,0 +1,171 @@
+replicaCount: 1
+
+redis:
+  image: redis:7.2-alpine
+  port: 6379
+
+gateway:
+  image: aegisllm-gateway:latest
+  port: 8000
+
+qdrant:
+  image: qdrant/qdrant:v1.9.0
+  port: 6333
+
+prometheus:
+  image: prom/prometheus:v2.45.0
+  port: 9090
+  serverFiles:
+    # Wyczyszczone reguły lokalne Prometheusa - całością zarządza Grafana (GitOps)
+    alerting_rules.yml:
+      groups: []
+
+alertmanager:
+  enabled: true
+  image: prom/alertmanager:v0.26.0
+  port: 9093
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'cluster']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'default'
+    receivers:
+      - name: 'default'
+
+grafana:
+  image: grafana/grafana:10.2.0
+  port: 3000
+  env:
+    GF_ALERTING_ENABLED: "false"
+    GF_UNIFIED_ALERTING_ENABLED: "true"
+
+  alerting:
+    apiVersion: 1
+    
+    # SRE DYNAMIC TEMPLATE: Pobiera unikalne opisy i linki bezpośrednio z adnotacji konkretnego alertu
+    templates:
+      - name: 'discord_clean_alert'
+        template: |
+          {{ define "discord.title" }}
+            {{ if eq .Status "firing" }}❌ [FIRING] {{ else }}✅ [RESOLVED] {{ end }}{{ .CommonLabels.alertname }}
+          {{ end }}
+          {{ define "discord.message" }}
+            {{ range .Alerts }}
+            **🚨 ALARM:** {{ .Annotations.summary }}
+            
+            **📝 OPIS:** ```text
+            {{ .Annotations.description }}
+            ```
+            
+            **🌐 METADANE KLASTRA:**
+            • **Środowisko:** `Production`
+            • **Aplikacja:** `AegisLLM Gateway`
+            
+            **🛠️ REAKCJA :**
+            • 📊 [Zobacz Główny Dashboard](http://localhost:3000/d/aegisllm-operational-dashboard)
+            • 📚 Dedykowana Instrukcja (Runbook): `{{ .Annotations.runbook_url }}`
+            
+            ---
+            {{ end }}
+          {{ end }}
+
+    contactPoints:
+      - name: 'Discord-SecOps'
+        receivers:
+          - uid: 'discord_webhook_receiver'
+            type: 'discord'
+            settings:
+              url: 'https://discord.com/api/webhooks/1519358410175283264/bzbflfyg7i99xw7d105V1RxsRRq3NEGe2yqZTARQGW7oTGiu6ymaAWMaJOOlSkjwKRMb'
+              title: '{{ template "discord.title" . }}'
+              message: '{{ template "discord.message" . }}'
+            disableResolveMessage: false
+
+    policies:
+      - receiver: 'Discord-SecOps'
+        group_by: ['alertname']
+        group_wait: 10s
+        group_interval: 30s
+        repeat_interval: 1h
+
+    groups:
+      - name: 'AegisLLM-Operational-Alerts'
+        folder: 'AegisLLM Alerts'
+        interval: 10s
+        rules:
+          # ALERT 1: Prompt Injection (Zliczanie statusów HTTP 400 z zapory)
+          - uid: 'aegis_prompt_injection_detected'
+            title: 'HighPromptInjectionRate'
+            condition: 'C'
+            for: '0s'
+            data:
+              - refId: 'A'
+                datasourceUid: 'aegis-prometheus'
+                relativeTimeRange:
+                  from: 60
+                  to: 0
+                model:
+                  expr: 'sum(increase(aegis_http_requests_total{http_status="400"}[1m])) or vector(0)'
+                  intervalMs: 10000
+                  refId: 'A'
+              - refId: 'B'
+                datasourceUid: '-100'
+                model:
+                  expression: 'A'
+                  reducer: 'last'
+                  type: 'reduce'
+                  refId: 'B'
+              - refId: 'C'
+                datasourceUid: '-100'
+                model:
+                  expression: '$B > 3'
+                  type: 'math'
+                  refId: 'C'
+            noDataState: 'OK'
+            execErrState: 'Alerting'
+            annotations:
+              summary: '🚨 Zmasowany atak Prompt Injection wykryty na Aegis Gateway!'
+              description: 'Panel "Prompt Injection Firewall" wykazał ponad 3 próby wstrzyknięcia złośliwego kodu w ciągu ostatniej minuty. Zweryfikuj logi bramki.'
+              runbook_url: '[PLACEHOLDER_LINK_RUNBOOK]/docs/runbooks/high-prompt-injection.md'
+
+          # ALERT 2: Gateway Error (Monitorowanie błędów wewnętrznych HTTP 500)
+          - uid: 'aegis_gateway_critical_errors'
+            title: 'CriticalGatewayErrors'
+            condition: 'C'
+            for: '30s'
+            data:
+              - refId: 'A'
+                datasourceUid: 'aegis-prometheus'
+                relativeTimeRange:
+                  from: 60
+                  to: 0
+                model:
+                  expr: 'sum(rate(aegis_http_requests_total{http_status="500"}[1m])) or vector(0)'
+                  intervalMs: 10000
+                  refId: 'A'
+              - refId: 'B'
+                datasourceUid: '-100'
+                model:
+                  expression: 'A'
+                  reducer: 'last'
+                  type: 'reduce'
+                  refId: 'B'
+              - refId: 'C'
+                datasourceUid: '-100'
+                model:
+                  expression: '$B > 0'
+                  type: 'math'
+                  refId: 'C'
+            noDataState: 'OK'
+            execErrState: 'Alerting'
+            annotations:
+              summary: '🔥 Bramka AegisLLM zwraca błędy HTTP 500!'
+              description: 'Panel "Total Traffic & Latency" zarejestrował błędy wewnętrzne serwera. Prawdopodobna awaria komunikacji z Redis, Qdrant lub API Gemini.'
+              runbook_url: '[PLACEHOLDER_LINK_RUNBOOK]/docs/runbooks/critical-gateway-errors.md'
+
+trafficGenerator:
+  image: python:3.11-slim
+  enabled: true

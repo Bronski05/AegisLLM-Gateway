@@ -1,0 +1,7 @@
+apiVersion: v2
+name: aegisllm-chart
+description: Podstawowy Helm chart dla bramki AegisLLM (Wersja Junior/Regular)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+# Brak jakichkolwiek zaleznosci (brak Prometheusa i Grafany!)

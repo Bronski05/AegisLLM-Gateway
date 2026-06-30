@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegis-gateway
+  labels:
+    app: aegis-gateway
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: aegis-gateway
+  template:
+    metadata:
+      labels:
+        app: aegis-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: "{{ .Values.gateway.image }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.gateway.port }}
+          
+          # Wstrzykiwanie zmiennych środowiskowych do Pythona
+          env:
+            - name: REDIS_URL
+              value: "redis://aegis-redis-service:{{ .Values.redis.port }}/0"
+            - name: QDRANT_HOST
+              value: "aegis-qdrant-service"
+            - name: QDRANT_PORT
+              value: "6333"
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aegis-secrets
+                  key: gemini-api-key
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aegis-gateway-service
+spec:
+  type: ClusterIP
+  selector:
+    app: aegis-gateway
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: {{ .Values.gateway.port }}

@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegis-qdrant
+  labels:
+    app: aegis-qdrant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aegis-qdrant
+  template:
+    metadata:
+      labels:
+        app: aegis-qdrant
+    spec:
+      containers:
+        - name: qdrant
+          image: "{{ .Values.qdrant.image }}"
+          ports:
+            - containerPort: {{ .Values.qdrant.port }}
+          resources:
+            limits:
+              cpu: 300m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aegis-qdrant-service
+spec:
+  selector:
+    app: aegis-qdrant
+  ports:
+    - protocol: TCP
+      port: {{ .Values.qdrant.port }}
+      targetPort: {{ .Values.qdrant.port }}

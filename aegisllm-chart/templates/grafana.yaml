@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aegis-grafana-dashboards
+data:
+  datasources.yaml: |
+{{ .Files.Get "grafana/provisioning/datasources/datasources.yaml" | indent 4 }}
+  providers.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'AegisDashboards'
+        orgId: 1
+        folder: 'AegisLLM'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+  aegis_dashboard.json: |
+{{ .Files.Get "grafana/dashboards/aegis_dashboard.json" | indent 4 }}
+  # SRE FIX: Wstrzykujemy strukturę alertów bezpośrednio z wartości Helma
+  alerting.yaml: |
+{{ toYaml .Values.grafana.alerting | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegis-grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aegis-grafana
+  template:
+    metadata:
+      labels:
+        app: aegis-grafana
+      annotations:
+        checksum/alerts: {{ toYaml .Values.grafana.alerting | sha256sum }}
+    spec:
+      containers:
+        - name: grafana
+          image: "{{ .Values.grafana.image }}"
+          # SRE FIX: Wymuszamy zmienne środowiskowe dla stabilnego silnika alertów
+          env:
+            - name: GF_ALERTING_ENABLED
+              value: "false"
+            - name: GF_UNIFIED_ALERTING_ENABLED
+              value: "true"
+          ports:
+            - containerPort: {{ .Values.grafana.port }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              subPath: datasources.yaml
+            - name: config-volume
+              mountPath: /etc/grafana/provisioning/dashboards/providers.yaml
+              subPath: providers.yaml
+            - name: config-volume
+              mountPath: /var/lib/grafana/dashboards/aegis_dashboard.json
+              subPath: aegis_dashboard.json
+            # SRE FIX: Montujemy plik z alertami w oficjalnym katalogu prowizjonowania Grafany
+            - name: config-volume
+              mountPath: /etc/grafana/provisioning/alerting/alerting.yaml
+              subPath: alerting.yaml
+          resources:
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+      volumes:
+        - name: config-volume
+          configMap:
+            name: aegis-grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aegis-grafana-service
+spec:
+  selector:
+    app: aegis-grafana
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: {{ .Values.grafana.port }}
