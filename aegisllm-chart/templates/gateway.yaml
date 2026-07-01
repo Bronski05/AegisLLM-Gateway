@@ -4,53 +4,78 @@ metadata:
   name: aegis-gateway
   labels:
     app: aegis-gateway
+
 spec:
+  # Liczba replik kontrolowana przez Helm (skalowanie aplikacji)
   replicas: {{ .Values.replicaCount }}
+
   selector:
     matchLabels:
       app: aegis-gateway
+
   template:
     metadata:
       labels:
         app: aegis-gateway
+
     spec:
       containers:
         - name: gateway
+
+          # Obraz kontenera dostarczany przez pipeline CI/CD
           image: "{{ .Values.gateway.image }}"
           imagePullPolicy: IfNotPresent
+
           ports:
             - containerPort: {{ .Values.gateway.port }}
-          
-          # Wstrzykiwanie zmiennych środowiskowych do Pythona
+
+          # Konfiguracja środowiska runtime (integracje i zależności usługowe)
           env:
+
+            # Redis – cache / kolejki / szybkie operacje stanowe
             - name: REDIS_URL
               value: "redis://aegis-redis-service:{{ .Values.redis.port }}/0"
+
+            # Qdrant – baza wektorowa (embeddingi / wyszukiwanie semantyczne)
             - name: QDRANT_HOST
               value: "aegis-qdrant-service"
             - name: QDRANT_PORT
               value: "6333"
+
+            # Klucz API do modeli (wstrzykiwany z Kubernetes Secret)
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: aegis-secrets
                   key: gemini-api-key
+
           resources:
+            # Limity zasobów chroniące klaster przed przeciążeniem
             limits:
               cpu: "500m"
               memory: "512Mi"
+
+            # Minimalne zasoby wymagane do stabilnej pracy
             requests:
               cpu: "250m"
               memory: "256Mi"
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aegis-gateway-service
+
 spec:
+  # Service wewnętrzny klastra (brak ekspozycji na zewnątrz)
   type: ClusterIP
+
   selector:
     app: aegis-gateway
+
   ports:
     - protocol: TCP
       port: 80
+
+      # Port kontenera, do którego kierowany jest ruch
       targetPort: {{ .Values.gateway.port }}

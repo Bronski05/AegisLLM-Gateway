@@ -1,6 +1,6 @@
 # AegisLLM: AI Security Gateway & Monitoring
 
-A lightweight API gateway designed to protect and speed up applications using LLMs (like Google Gemini). It acts as a reverse proxy that blocks Prompt Injection attacks, caches similar questions to save money, and sends clean alerts directly to Discord when something goes wrong.
+A lightweight API gateway for LLM-based applications (e.g. Google Gemini). It acts as a reverse proxy that adds prompt injection filtering, semantic caching, and basic observability with Prometheus and Discord alerts.
 
 [![AegisLLM Gateway CI/CD](https://github.com/Bronski05/AegisLLM-Gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Bronski05/AegisLLM-Gateway/actions/workflows/ci.yml)
 
@@ -22,36 +22,32 @@ graph TD
 ```
 ## Pipeline Steps
 
-AI Firewall: Every incoming prompt is inspected before it reaches the LLM. If an attack (Prompt Injection) is detected, the gateway blocks it immediately, returns an HTTP 400 error, and increments a Prometheus counter.
-
-Semantic Caching: Safe prompts are checked against a vector database (Qdrant) and Redis. If a semantically similar question was asked before, the answer is served instantly from the cache, saving API costs and reducing latency.
-
-Shadow Routing: For every cache hit, the gateway asynchronously mirrors the request to a backup model or eval pipeline via a background task, without slowing down the user.
-
-GitOps Alerting & Fallbacks: Prometheus metrics track all traffic statuses (200/400/500). The alert queries use fallback logic (or vector(0)) so the system knows that 0 errors is the normal state and doesn't trigger false alarms.
-
-Clean Discord Alerts: Alert routing and layout are managed as code in Helm values. When a threshold is breached (e.g., >3 attacks/min), Grafana sends a well-formatted message to Discord with the incident details and a link to the dashboard.
+- **AI Firewall** – each incoming request is checked for prompt injection before it reaches the LLM. If a match is detected, the request is blocked and an HTTP 400 response is returned. A Prometheus counter is incremented.
+- **Semantic caching** – requests are matched against stored embeddings in Qdrant (with Redis as a fast lookup layer). If a similar query is found, the cached response is returned.
+- **Shadow routing** – requests are asynchronously mirrored to a secondary endpoint for evaluation/testing purposes. This runs in the background and does not affect the main response path.
+- **Metrics & alerting** – Prometheus collects request-level metrics (200/400/500). Alerts are based on threshold rules defined in the monitoring stack.
+- **Notifications (Discord)** – when alert conditions are triggered, Grafana sends a formatted message to a Discord webhook with basic incident details and a dashboard link.
 
 
 ## Infrastructure as Code (IaC)
 
-The entire local cluster is provisioned automatically via **Terraform**. All configuration files are located in the `terraform/` directory:
+The local Kubernetes cluster is provisioned using Terraform. All configuration is stored in the `terraform/` directory.
 
-* **`providers.tf`** – Configures the required Terraform version (`>= 1.0`) and binds the `tehcyx/kind` provider.
-* **`main.tf`** – Deploys a multi-node Kubernetes cluster named `aegis-production-cluster` split into two nodes:
-  * **Control-Plane** – Manages the cluster and maps edge ports `80` and `443` directly to your localhost (`127.0.0.1`) for easy application access.
-  * **Worker** – A dedicated node where the application pods and database workloads actually run.
-* **Outputs** – Automatically exports the generated `kubeconfig` path straight to your home directory (`~/.kube/config`).
+- **providers.tf** – defines Terraform version requirements and configures the `kind` provider.
+- **main.tf** – creates a multi-node Kubernetes cluster (`aegis-production-cluster`) with:
+  - a control-plane node exposed to localhost on ports 80 and 443
+  - a worker node for application and database workloads
+- **Outputs** – exports the generated kubeconfig path to `~/.kube/config`.
 
 
 ##  Helm Chart Architecture (`aegisllm-chart/`)
 
- Entire infrastructure and monitoring stack is built from scratch using native Kubernetes manifests inside the `templates/` folder:
+ The Kubernetes stack is defined using Helm templates in the templates/ directory.
 
-* **`gateway.yaml`** – Deployment and service configuration for the core FastAPI proxy application (AegisLLM).
-* **`redis.yaml` & `qdrant.yaml`** – In-cluster database deployments handling semantic vector storage and fast cache lookups.
-* **`prometheus.yaml` & `grafana.yaml`** – Built-in observability stack. All Prometheus datasources and Discord alerting rules are defined directly as code.
-* **`traffic-generator.yaml`** – A background background task that automatically generates dummy traffic and simulates Prompt Injection attacks to test alerts live.
+- **gateway.yaml** – deployment and service for the FastAPI gateway (AegisLLM).
+- **redis.yaml, qdrant.yaml** – in-cluster storage for caching and vector search.
+- **prometheus.yaml, grafana.yaml** – observability stack with metrics collection and alerting rules.
+- **traffic-generator.yaml** – workload generator that simulates normal traffic and prompt injection attacks for testing the system.
 
 ## Quick Start
 
@@ -100,50 +96,46 @@ Accessing Dashboards
 
 Here is how the architecture behaves under real-time simulated traffic and chaos tests:
 
-#### 1. Grafana Dashboard (Resilience & Fail-Safe Test)
-*This view shows what happened when the Redis cache deployment was scaled down to 0 replicas. The gateway did not crash with HTTP 500 errors. Instead, the fail-safe kicked in, treated the failure as a continuous Cache Miss (the orange line spikes), and kept routing traffic safely to the Gemini API without dropping a single request.*
+#### 1. Grafana Dashboard 
+
+Redis was scaled to 0 replicas. Requests fell back to cache-miss mode and were routed to Gemini without errors.
 
 ![Grafana Dashboard](images/grafana_dashboard.png)
 
-#### 2. Prometheus Target Status & Collected Metrics
-*Proof that Prometheus is successfully scraping data inside the Kubernetes cluster. The target endpoint shows a healthy 'UP' status, and the metric graph actively counts incoming requests split by HTTP 200 (safe traffic) and HTTP 400 (blocked injection attacks).*
+#### 2. Prometheus Target Status & Metrics
+Prometheus scraping is working. Targets are UP, with traffic split between HTTP 200 and 400.
 
 ![Prometheus Targets](images/prometheus.png)
 ![Prometheus Metrics](images/prometheus_metrics.png)
 
-#### 3. Active Alert Rules in Grafana
-*Confirmation that automated alerting is configured as code. The system constantly monitors for both infrastructure crashes (`CriticalGatewayErrors` for HTTP 500s) and active security threats (`HighPromptInjectionRate`) every 10 seconds.*
+#### 3. Alert Rules in Grafana
+Grafana alerting is configured as code, monitoring HTTP 500 errors and prompt injection rate on a 10s interval.
 
 ![Grafana Alert Rules](images/grafana_alerts.png)
 
 #### 4. Live Discord Notification Instance
-*An example of the actual alert message sent to the Discord channel when a threat threshold is breached. 
+Alert message sent to the Discord channel when a threat threshold is breached. 
 
 ![Discord Alert](images/discord_alert.png)
 
 ## Running Automated Tests
-The project includes a pytest suite validating the async gateway lifecycle, firewall blocks, and ensures Prometheus metrics are correctly incremented during failures:
+The project includes a pytest suite that covers the main gateway flows, including request handling, firewall blocking, and Prometheus metrics updates.
 
 ```Bash
 python -m pytest test_main.py -v
 ```
 
-## CI/CD Integration (GitHub Actions)
+## CI/CD (GitHub Actions)
 
-The pipeline automates quality checks on every push or pull_request:
+Every push and pull request triggers a CI pipeline that validates the basic quality and stability of the system.
 
-Linting: Code style check using ruff.
-
-Helm Validation: Runs helm lint to check for syntax errors or bad indentation in the Kubernetes manifests and alert configs.
-
-Telemetry Testing: Runs pytest to ensure that application blocks and database crashes correctly trigger Prometheus metric updates.
-
-Docker Promotion: If all tests pass, the multi-stage Docker build runs, and the image is pushed to GitHub Container Registry (GHCR).
+- **Linting (ruff)** – checks Python code style and catches simple issues early.
+- **Helm lint** – validates Kubernetes manifests and ensures the Helm chart is syntactically correct.
+- **Tests (pytest)** – runs integration tests covering gateway logic (cache, firewall, Prometheus metrics).
+- **Docker build & publish** – builds a multi-stage image and pushes it to GitHub Container Registry (GHCR) if all checks pass.
 
 ## Limitations & Trade-offs
 
-Data Privacy (DLP): Currently, prompts pass through an external cloud API (Gemini). In a true enterprise banking environment, strict Data Loss Prevention policies would require replacing this with a locally hosted LLM (e.g., Llama 3) running strictly on-premise.
-
-Cache Accuracy: Finding the right similarity threshold in Qdrant is tricky. Too low causes false cache hits (wrong answers), too high reduces cost savings.
-
-Ephemeral Storage: Redis and Qdrant currently use local volume mounts for demo purposes. For production, they need Persistent Volume Claims (PVC) to prevent data loss when pods restart.
+- **Data privacy (DLP)** – prompts are currently sent to an external API (Gemini). In a stricter environment, this would need to be replaced with a self-hosted model running on-premise.
+- **Cache accuracy** – choosing a similarity threshold in Qdrant is a trade-off. Lower values increase cache hits but risk incorrect matches, while higher values reduce efficiency.
+- **Ephemeral storage** – Redis and Qdrant currently use local volumes, which are fine for a demo setup. In production, they should be replaced with persistent storage (PVCs) to avoid data loss on restart.

@@ -4,37 +4,55 @@ metadata:
   name: aegis-redis
   labels:
     app: aegis-redis
+
 spec:
   replicas: 1
+
   selector:
     matchLabels:
       app: aegis-redis
+
   template:
     metadata:
       labels:
         app: aegis-redis
+
     spec:
       containers:
         - name: redis
+
+          # Obraz Redis (cache, kolejki, szybkie operacje stanowe)
           image: "{{ .Values.redis.image }}"
+
           ports:
             - containerPort: {{ .Values.redis.port }}
+
           resources:
+            # Limity zasobów – kontrola zużycia CPU i pamięci
             limits:
               cpu: 200m
               memory: 256Mi
+
+            # Minimalne zasoby dla stabilnego działania w klastrze
             requests:
               cpu: 100m
               memory: 128Mi
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aegis-redis-service
+
 spec:
   selector:
     app: aegis-redis
+
   ports:
     - protocol: TCP
+
+      # Port Redis (wewnętrzna komunikacja usług)
       port: {{ .Values.redis.port }}
+
+      # Mapowanie na port kontenera Redis
       targetPort: {{ .Values.redis.port }}

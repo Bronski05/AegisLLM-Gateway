@@ -1,20 +1,26 @@
 resource "kind_cluster" "aegis_cluster" {
   name            = "aegis-production-cluster"
   wait_for_ready  = true
+
+  # Lokalna ścieżka kubeconfig dla komunikacji z klastrem
   kubeconfig_path = pathexpand("~/.kube/config")
 
   kind_config {
     kind        = "Cluster"
     api_version = "kind.x-k8s.io/v1alpha4"
 
-    # Węzeł zarządzający (Control Plane) + Ingress Edge Ports
+    # ==========================================
+    # CONTROL PLANE (node zarządzający)
+    # ==========================================
     node {
       role = "control-plane"
 
+      # Minimalna konfiguracja kubeadm (placeholder / kompatybilność)
       kubeadm_config_patches = [
         "kind: false"
       ]
 
+      # Mapowanie portów hosta na klaster (Ingress / Gateway)
       extra_port_mappings {
         container_port = 80
         host_port      = 80
@@ -30,7 +36,9 @@ resource "kind_cluster" "aegis_cluster" {
       }
     }
 
-    # Węzeł roboczy (Worker) - tutaj będą działać pody AegisLLM, Redis i Qdrant
+    # ==========================================
+    # WORKER NODE (runtime workloads)
+    # ==========================================
     node {
       role = "worker"
     }
@@ -38,6 +46,7 @@ resource "kind_cluster" "aegis_cluster" {
 }
 
 output "kubeconfig" {
+  # Ścieżka do kubeconfig generowanego przez KIND
   value       = kind_cluster.aegis_cluster.kubeconfig_path
   description = "Sciezka do pliku konfiguracyjnego kubeconfig"
 }

@@ -2,30 +2,42 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aegis-traffic-generator
+
 spec:
   replicas: 1
+
   selector:
     matchLabels:
       app: aegis-traffic-generator
+
   template:
     metadata:
       labels:
         app: aegis-traffic-generator
+
     spec:
       containers:
         - name: generator
+
+          # Obraz kontenera zawierający środowisko do generowania ruchu testowego
           image: "{{ .Values.trafficGenerator.image }}"
+
+          # Uruchomienie skryptu inline zamiast entrypointu obrazu
           command: ["/bin/sh", "-c"]
+
           args:
             - |
+              # Tworzenie skryptu generatora ruchu w runtime kontenera
               cat << 'EOF' > /generator.py
               import time
               import random
               import urllib.request
               import json
 
+              # Endpoint API gateway (symulacja ruchu produkcyjnego)
               url = "http://aegis-gateway-service:80/v1/chat/completions"
               
+              # Zestaw przykładowych promptów (w tym testy obciążeniowe i bezpieczeństwa)
               prompts = [
                   "Czesc, jak dziala blockchain?",
                   "Czesc, jak dziala blockchain?",
@@ -36,17 +48,38 @@ spec:
               ]
 
               print("Uruchamianie symulatora ruchu SRE...")
+
+              # Pętla nieskończona – generowanie ciągłego ruchu do testów systemu
               while True:
                   try:
                       prompt = random.choice(prompts)
-                      data = json.dumps({"messages": [{"role": "user", "content": prompt}]}).encode('utf-8')
-                      
-                      req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
+
+                      # Payload zgodny z API chat/completions
+                      data = json.dumps({
+                          "messages": [
+                              {"role": "user", "content": prompt}
+                          ]
+                      }).encode('utf-8')
+
+                      # Request HTTP do gatewaya
+                      req = urllib.request.Request(
+                          url,
+                          data=data,
+                          headers={'Content-Type': 'application/json'},
+                          method='POST'
+                      )
+
+                      # Wysyłanie żądania i logowanie statusu odpowiedzi
                       with urllib.request.urlopen(req, timeout=5) as response:
                           print(f"Wyslano: {prompt[:30]}... | Status: {response.status}")
+
                   except Exception as e:
+                      # Obsługa błędów (timeouty, brak dostępności usług)
                       print(f"Blad podczas symulacji ruchu: {e}")
-                  
+
+                  # Losowy delay – symulacja nieregularnego ruchu użytkowników
                   time.sleep(random.randint(2, 5))
               EOF
+
+              # Uruchomienie generatora ruchu
               python /generator.py
